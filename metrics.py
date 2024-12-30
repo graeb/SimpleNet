@@ -1,8 +1,7 @@
-"""Anomaly metrics."""
-
 import cv2
 import numpy as np
 from sklearn import metrics
+from skimage import measure
 
 
 def compute_imagewise_retrieval_metrics(
@@ -84,44 +83,60 @@ def compute_pixelwise_retrieval_metrics(anomaly_segmentations, ground_truth_mask
     }
 
 
-import pandas as pd
-from skimage import measure
-
-
 def compute_pro(masks, amaps, num_th=200):
-    df = pd.DataFrame([], columns=["pro", "fpr", "threshold"])
-    binary_amaps = np.zeros_like(amaps, dtype=bool)
+    """
+    Compute the PRO (Per-Region Overlap) metric and the AUC (Area Under Curve) for a given set of masks and anomaly maps.
 
+    Args:
+        masks (np.ndarray): Ground truth binary masks, shape (N, H, W).
+        amaps (np.ndarray): Anomaly maps, shape (N, H, W).
+        num_th (int): Number of thresholds to evaluate.
+
+    Returns:
+        float: The PRO-AUC score.
+    """
+    # DataFrame for results
+    df = {"pro": [], "fpr": [], "threshold": []}
+
+    # Threshold range
     min_th = amaps.min()
     max_th = amaps.max()
     delta = (max_th - min_th) / num_th
 
-    k = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    # Iterate over thresholds
     for th in np.arange(min_th, max_th, delta):
-        binary_amaps[amaps <= th] = 0
+        # Threshold anomaly maps
+        binary_amaps = np.zeros_like(amaps, dtype=bool)
         binary_amaps[amaps > th] = 1
 
+        # Calculate PRO
         pros = []
         for binary_amap, mask in zip(binary_amaps, masks):
-            binary_amap = cv2.dilate(binary_amap.astype(np.uint8), k)
             for region in measure.regionprops(measure.label(mask)):
                 axes0_ids = region.coords[:, 0]
                 axes1_ids = region.coords[:, 1]
                 tp_pixels = binary_amap[axes0_ids, axes1_ids].sum()
                 pros.append(tp_pixels / region.area)
 
+        # Calculate FPR
         inverse_masks = 1 - masks
         fp_pixels = np.logical_and(inverse_masks, binary_amaps).sum()
         fpr = fp_pixels / inverse_masks.sum()
 
-        df = df.append(
-            {"pro": np.mean(pros), "fpr": fpr, "threshold": th}, ignore_index=True
-        )
+        # Append results
+        df["pro"].append(np.mean(pros))
+        df["fpr"].append(fpr)
+        df["threshold"].append(th)
 
     # Normalize FPR from 0 ~ 1 to 0 ~ 0.3
-    df = df[df["fpr"] < 0.3]
-    df["fpr"] = df["fpr"] / df["fpr"].max()
+    df["fpr"] = np.clip(df["fpr"], 0, 0.3)
+    df["fpr"] = df["fpr"] / max(df["fpr"])
 
-    pro_auc = metrics.auc(df["fpr"], df["pro"])
+    # Sort by FPR for AUC computation
+    sorted_indices = np.argsort(df["fpr"])
+    fpr_sorted = np.array(df["fpr"])[sorted_indices]
+    pro_sorted = np.array(df["pro"])[sorted_indices]
+
+    # Compute AUC
+    pro_auc = metrics.auc(fpr_sorted, pro_sorted)
     return pro_auc
-
