@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-datapath=/home/graeb/Datasets/MVTec
+datapath=~/Datasets/MVTec
 # datasets=('screw' 'pill' 'capsule' 'carpet' 'grid' 'tile' 'wood' 'zipper' 'cable' 'toothbrush' 'transistor' 'metal_nut' 'bottle' 'hazelnut' 'leather')
 datasets=('screw' 'carpet')
 dataset_flags=($(for dataset in "${datasets[@]}"; do echo '-d '"${dataset}"; done))
 
 python3 main.py \
 	--gpu 0 \
-	--seed 0 \
+	--seed 333 \
 	--log_group simplenet_mvtec \
 	--log_project MVTecAD_Results \
 	--results_path results \
